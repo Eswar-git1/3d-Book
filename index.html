@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive 3D Military Book</title>
+    <title>Interactive 3D Military Book with Interior Pages</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
         body {
@@ -30,11 +30,13 @@
             border-radius: 10px;
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.1);
+            max-width: 200px;
         }
         .controls h3 {
             margin: 0 0 10px 0;
             color: #ffd700;
             text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+            font-size: 16px;
         }
         .control-group {
             margin: 10px 0;
@@ -56,11 +58,28 @@
             font-size: 11px;
             transition: all 0.3s ease;
             border: 1px solid rgba(255, 255, 255, 0.2);
+            width: calc(50% - 4px);
         }
-        .control-group button:hover {
+        .control-group button.full-width {
+            width: calc(100% - 4px);
+        }
+        .control-group button:hover:not(:disabled) {
             background: linear-gradient(45deg, #4a7c59, #2c5530);
             transform: translateY(-2px);
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        .control-group button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .page-indicator {
+            margin-top: 10px;
+            padding: 8px;
+            background: rgba(255, 215, 0, 0.1);
+            border-radius: 5px;
+            font-size: 12px;
+            text-align: center;
+            color: #ffd700;
         }
         .info {
             position: absolute;
@@ -96,62 +115,103 @@
             font-size: 12px;
             color: #cccccc;
         }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            color: #ffd700;
+            font-size: 20px;
+        }
+        .quick-nav {
+            margin: 10px 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+        .quick-nav button {
+            width: 30px;
+            height: 30px;
+            padding: 0;
+            font-size: 10px;
+        }
     </style>
 </head>
 <body>
+    <div id="loadingOverlay" class="loading-overlay">
+        <div>Loading 3D Book...</div>
+    </div>
+
     <div class="title">
         <h1>PRESTIGIOUS MILITARY PUBLICATION</h1>
-        <p>Interactive 3D Mockup</p>
+        <p>Interactive 3D Preview</p>
     </div>
     
     <div class="controls">
-        <h3>🎛️ Controls</h3>
-        <div class="control-group">
-            <label>Book Animation:</label>
-            <button onclick="openBook()">Open Book</button>
-            <button onclick="closeBook()">Close Book</button>
-            <button onclick="flipPage()">Flip Page</button>
-        </div>
+        <h3>🎛️ Interactive 3D Preview</h3>
         <div class="control-group">
             <label>Camera Views:</label>
-            <button onclick="setCameraView('front')">Front View</button>
-            <button onclick="setCameraView('angle')">Angle View</button>
-            <button onclick="setCameraView('top')">Top View</button>
+            <button onclick="setCameraView('front')">Front</button>
+            <button onclick="setCameraView('angle')">Angle</button>
+            <button onclick="setCameraView('top')">Top</button>
+            <button onclick="setCameraView('side')">Side</button>
         </div>
         <div class="control-group">
             <label>Effects:</label>
             <button onclick="toggleRotation()">Auto Rotate</button>
-            <button onclick="resetPosition()">Reset</button>
+            <button onclick="resetPosition()">Reset View</button>
         </div>
     </div>
 
     <div class="info">
-        <strong>Instructions:</strong><br>
-        • Drag to rotate the book<br>
+        <strong>📖 Instructions:</strong><br>
+        • Drag to rotate the book view<br>
         • Scroll to zoom in/out<br>
-        • Use controls for animations<br>
-        • Replace image URLs with your covers
+        • Use camera views for different angles<br>
+        • Toggle auto-rotate for continuous motion
     </div>
 
     <script>
-        let scene, camera, renderer, book, frontCover, backCover, spine, pages;
+        let scene, camera, renderer;
+        let bookGroup, pagesGroup;
         let isMouseDown = false;
         let mouseX = 0, mouseY = 0;
         let targetRotationX = 0, targetRotationY = 0;
         let currentRotationX = 0, currentRotationY = 0;
         let autoRotate = false;
-        let bookGroup;
         let isBookOpen = false;
-        let animationId;
+        let currentPage = 0;
+        let pages = [];
+        let pageTextures = [];
+        let isAnimating = false;
+
+        // Page configuration - Slide3 as first interior page
+        const pageConfig = [
+            { name: 'Front Cover', image: './static/images/FRONT COVER PAGE.png' },
+            { name: 'Interior Page 1', image: './static/images/Slide3.PNG' },
+            { name: 'Interior Page 2', image: './static/images/Slide4.PNG' },
+            { name: 'Interior Page 3', image: './static/images/Slide5.PNG' },
+            { name: 'Interior Page 4', image: './static/images/Slide6.PNG' },
+            { name: 'Interior Page 5', image: './static/images/Slide7.PNG' },
+            { name: 'Interior Page 6', image: './static/images/Slide8.PNG' },
+            { name: 'Back Cover', image: './static/images/BACK COVER PAGE.png' }
+        ];
 
         // Initialize the scene
         function init() {
             // Scene
             scene = new THREE.Scene();
+            scene.fog = new THREE.Fog(0x0f3460, 5, 20);
             
             // Camera
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 2, 5);
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 2, 6);
             camera.lookAt(0, 0, 0);
 
             // Renderer
@@ -160,30 +220,25 @@
             renderer.setClearColor(0x000000, 0);
             renderer.shadowMap.enabled = true;
             renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.2;
             document.body.appendChild(renderer.domElement);
 
-            // Lighting setup for premium look
-            const ambientLight = new THREE.AmbientLight(0x404040, 0.6);
-            scene.add(ambientLight);
-
-            const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
-            directionalLight.position.set(5, 10, 5);
-            directionalLight.castShadow = true;
-            directionalLight.shadow.mapSize.width = 2048;
-            directionalLight.shadow.mapSize.height = 2048;
-            scene.add(directionalLight);
-
-            const spotLight = new THREE.SpotLight(0xffd700, 0.8);
-            spotLight.position.set(-3, 8, 3);
-            spotLight.castShadow = true;
-            scene.add(spotLight);
+            // Lighting setup
+            setupLighting();
 
             // Create book group
             bookGroup = new THREE.Group();
             scene.add(bookGroup);
 
-            // Create book
-            createBook();
+            // Load textures and create book
+            loadTextures(() => {
+                createBook();
+                // Set book as closed mockup
+                isBookOpen = false;
+                currentPage = 0;
+                document.getElementById('loadingOverlay').style.display = 'none';
+            });
 
             // Add event listeners
             addEventListeners();
@@ -192,112 +247,343 @@
             animate();
         }
 
+        function setupLighting() {
+            // Enhanced ambient light for base illumination
+            const ambientLight = new THREE.AmbientLight(0x404060, 0.4);
+            scene.add(ambientLight);
+
+            // Main directional light with warmer tone
+            const directionalLight = new THREE.DirectionalLight(0xfff8e1, 1.2);
+            directionalLight.position.set(5, 10, 5);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 4096;
+            directionalLight.shadow.mapSize.height = 4096;
+            directionalLight.shadow.camera.near = 0.1;
+            directionalLight.shadow.camera.far = 50;
+            directionalLight.shadow.camera.left = -10;
+            directionalLight.shadow.camera.right = 10;
+            directionalLight.shadow.camera.top = 10;
+            directionalLight.shadow.camera.bottom = -10;
+            directionalLight.shadow.bias = -0.0001;
+            scene.add(directionalLight);
+
+            // Golden spotlight for dramatic effect
+            const spotLight = new THREE.SpotLight(0xffd700, 0.8);
+            spotLight.position.set(-3, 8, 3);
+            spotLight.castShadow = true;
+            spotLight.angle = Math.PI / 5;
+            spotLight.penumbra = 0.4;
+            spotLight.decay = 2;
+            spotLight.distance = 20;
+            scene.add(spotLight);
+
+            // Blue rim light for depth
+            const rimLight = new THREE.DirectionalLight(0x6090ff, 0.4);
+            rimLight.position.set(-5, 3, -5);
+            scene.add(rimLight);
+            
+            // Additional fill light
+            const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+            fillLight.position.set(3, -2, 4);
+            scene.add(fillLight);
+            
+            // Create atmospheric particles
+            createAtmosphericParticles();
+        }
+        
+        function createAtmosphericParticles() {
+            const particleCount = 100;
+            const particles = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            const colors = new Float32Array(particleCount * 3);
+            
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 20;
+                positions[i * 3 + 1] = (Math.random() - 0.5) * 15;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * 20;
+                
+                // Golden dust particles
+                colors[i * 3] = 1.0;
+                colors[i * 3 + 1] = 0.8 + Math.random() * 0.2;
+                colors[i * 3 + 2] = 0.3 + Math.random() * 0.3;
+            }
+            
+            particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            particles.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            
+            const particleMaterial = new THREE.PointsMaterial({
+                size: 0.02,
+                vertexColors: true,
+                transparent: true,
+                opacity: 0.6,
+                blending: THREE.AdditiveBlending
+            });
+            
+            const particleSystem = new THREE.Points(particles, particleMaterial);
+            scene.add(particleSystem);
+            
+            // Store reference for animation
+            window.particleSystem = particleSystem;
+        }
+
+        function loadTextures(callback) {
+            const loader = new THREE.TextureLoader();
+            let loadedCount = 0;
+
+            pageConfig.forEach((page, index) => {
+                loader.load(
+                    page.image,
+                    (texture) => {
+                        texture.wrapS = THREE.ClampToEdgeWrapping;
+                        texture.wrapT = THREE.ClampToEdgeWrapping;
+                        texture.minFilter = THREE.LinearFilter;
+                        texture.magFilter = THREE.LinearFilter;
+                        pageTextures[index] = texture;
+                        loadedCount++;
+                        
+                        if (loadedCount === pageConfig.length) {
+                            callback();
+                        }
+                    },
+                    undefined,
+                    (error) => {
+                        console.error(`Error loading ${page.name}:`, error);
+                        // Create placeholder texture
+                        const canvas = document.createElement('canvas');
+                        canvas.width = 512;
+                        canvas.height = 288;
+                        const ctx = canvas.getContext('2d');
+                        ctx.fillStyle = '#333';
+                        ctx.fillRect(0, 0, 512, 288);
+                        ctx.fillStyle = '#fff';
+                        ctx.font = '30px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(page.name, 256, 144);
+                        
+                        pageTextures[index] = new THREE.CanvasTexture(canvas);
+                        loadedCount++;
+                        
+                        if (loadedCount === pageConfig.length) {
+                            callback();
+                        }
+                    }
+                );
+            });
+        }
+
         function createBook() {
-            const bookWidth = 4.0;  // 16:9 landscape - wider
-            const bookHeight = 2.25; // 16:9 landscape - shorter
-            const bookDepth = 0.3;
+            const bookWidth = 4.0;
+            const bookHeight = 2.25;
+            const bookDepth = 0.4;
+            const pageThickness = 0.015;
 
-            // Book materials with local cover images
-            const frontCoverMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0xFFFFFF,
-                shininess: 30,
-                map: loadImageTexture('./static/images/FRONT COVER PAGE.png')
-            });
+            // Create pages group
+            pagesGroup = new THREE.Group();
+            bookGroup.add(pagesGroup);
 
-            const backCoverMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0xFFFFFF,
-                shininess: 30,
-                map: loadImageTexture('./static/images/BACK COVER PAGE.png')
-            });
-
+            // Create spine
+            const spineGeometry = new THREE.BoxGeometry(0.15, bookHeight, bookDepth);
             const spineMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x320F02,
-                shininess: 50
+                color: 0x2a1810,
+                shininess: 100,
+                specular: 0x444444,
+                bumpScale: 0.1
             });
-
-            const pagesMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0xFFFFF0,
-                shininess: 10
-            });
-
-            // Front cover
-            const frontGeometry = new THREE.BoxGeometry(bookWidth, bookHeight, 0.05);
-            frontCover = new THREE.Mesh(frontGeometry, frontCoverMaterial);
-            frontCover.position.set(0, 0, bookDepth/2 + 0.025);
-            frontCover.castShadow = true;
-            frontCover.receiveShadow = true;
-            bookGroup.add(frontCover);
-
-            // Back cover
-            const backGeometry = new THREE.BoxGeometry(bookWidth, bookHeight, 0.05);
-            backCover = new THREE.Mesh(backGeometry, backCoverMaterial);
-            backCover.position.set(0, 0, -bookDepth/2 - 0.025);
-            backCover.castShadow = true;
-            backCover.receiveShadow = true;
-            bookGroup.add(backCover);
-
-            // Spine
-            const spineGeometry = new THREE.BoxGeometry(0.05, bookHeight, bookDepth);
-            spine = new THREE.Mesh(spineGeometry, spineMaterial);
+            const spine = new THREE.Mesh(spineGeometry, spineMaterial);
             spine.position.set(-bookWidth/2 - 0.025, 0, 0);
             spine.castShadow = true;
             spine.receiveShadow = true;
             bookGroup.add(spine);
 
-            // Pages
-            const pagesGeometry = new THREE.BoxGeometry(bookWidth * 0.95, bookHeight * 0.95, bookDepth * 0.8);
-            pages = new THREE.Mesh(pagesGeometry, pagesMaterial);
-            pages.position.set(0.025, 0, 0);
-            pages.castShadow = true;
-            pages.receiveShadow = true;
-            bookGroup.add(pages);
-
-            // Add subtle glow effect
-            const glowGeometry = new THREE.BoxGeometry(bookWidth * 1.1, bookHeight * 1.1, bookDepth * 1.1);
-            const glowMaterial = new THREE.MeshBasicMaterial({
-                color: 0xffd700,
-                transparent: true,
-                opacity: 0.1,
-                side: THREE.BackSide
+            // Create book covers (hardcover effect)
+            const coverGeometry = new THREE.BoxGeometry(bookWidth + 0.1, bookHeight + 0.1, 0.05);
+            
+            // Front cover material with front cover texture
+            const frontCoverMaterial = new THREE.MeshPhongMaterial({
+                map: pageTextures[0], // Front cover texture
+                shininess: 80,
+                specular: 0x333333
             });
-            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
-            bookGroup.add(glow);
+            
+            // Back cover material with back cover texture
+            const backCoverMaterial = new THREE.MeshPhongMaterial({
+                map: pageTextures[pageConfig.length - 1], // Back cover texture
+                shininess: 80,
+                specular: 0x333333
+            });
+            
+            // Front cover
+            const frontCover = new THREE.Mesh(coverGeometry, frontCoverMaterial);
+            frontCover.position.set(0, 0, bookDepth/2 + 0.025);
+            frontCover.castShadow = true;
+            frontCover.receiveShadow = true;
+            bookGroup.add(frontCover);
+            
+            // Back cover
+            const backCover = new THREE.Mesh(coverGeometry, backCoverMaterial);
+            backCover.position.set(0, 0, -bookDepth/2 - 0.025);
+            backCover.castShadow = true;
+            backCover.receiveShadow = true;
+            bookGroup.add(backCover);
 
-            // Ground plane for shadows
+            // Create individual pages with improved materials
+            for (let i = 0; i < pageConfig.length; i++) {
+                const pageGroup = new THREE.Group();
+                
+                // Page geometry with rounded edges
+                const pageGeometry = new THREE.PlaneGeometry(bookWidth - 0.05, bookHeight - 0.05);
+                
+                // Create paper texture for back sides
+                const paperCanvas = document.createElement('canvas');
+                paperCanvas.width = 512;
+                paperCanvas.height = 288;
+                const paperCtx = paperCanvas.getContext('2d');
+                paperCtx.fillStyle = '#fefefe';
+                paperCtx.fillRect(0, 0, 512, 288);
+                
+                // Add subtle paper texture
+                for (let x = 0; x < 512; x += 2) {
+                    for (let y = 0; y < 288; y += 2) {
+                        if (Math.random() > 0.98) {
+                            paperCtx.fillStyle = '#f8f8f8';
+                            paperCtx.fillRect(x, y, 1, 1);
+                        }
+                    }
+                }
+                const paperTexture = new THREE.CanvasTexture(paperCanvas);
+                
+                // Front side material
+                const frontMaterial = new THREE.MeshPhongMaterial({
+                    map: pageTextures[i],
+                    side: THREE.FrontSide,
+                    shininess: 20,
+                    specular: 0x222222,
+                    transparent: true,
+                    opacity: 0.98
+                });
+                
+                // Back side material with proper texture mapping
+                let backTexture = paperTexture;
+                if (i < pageConfig.length - 1 && i > 0) {
+                    // For interior pages, show the next page content on the back
+                    backTexture = pageTextures[i + 1] || paperTexture;
+                }
+                
+                const backMaterial = new THREE.MeshPhongMaterial({
+                    map: backTexture,
+                    side: THREE.BackSide,
+                    shininess: 15,
+                    specular: 0x111111,
+                    transparent: true,
+                    opacity: 0.95
+                });
+                
+                const frontPage = new THREE.Mesh(pageGeometry, frontMaterial);
+                const backPage = new THREE.Mesh(pageGeometry, backMaterial);
+                
+                pageGroup.add(frontPage);
+                pageGroup.add(backPage);
+                
+                // Position pages with proper thickness
+                const zOffset = (i - pageConfig.length/2) * pageThickness;
+                pageGroup.position.set(bookWidth * 0.02, 0, zOffset);
+                
+                // Set initial rotation (closed book)
+                pageGroup.rotation.y = 0;
+                
+                // Store reference
+                pages.push(pageGroup);
+                pagesGroup.add(pageGroup);
+                
+                // Add shadow casting
+                frontPage.castShadow = true;
+                frontPage.receiveShadow = true;
+                backPage.castShadow = true;
+                backPage.receiveShadow = true;
+            }
+
+            // Add ground for shadows
             const groundGeometry = new THREE.PlaneGeometry(20, 20);
             const groundMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x333333, 
-                transparent: true, 
-                opacity: 0.3 
+                color: 0x1a1a2e,
+                transparent: true,
+                opacity: 0.8
             });
             const ground = new THREE.Mesh(groundGeometry, groundMaterial);
             ground.rotation.x = -Math.PI / 2;
             ground.position.y = -2;
             ground.receiveShadow = true;
             scene.add(ground);
+
+            // Add subtle glow effect
+            const glowGeometry = new THREE.BoxGeometry(
+                bookWidth * 1.1,
+                bookHeight * 1.1,
+                bookDepth * 1.5
+            );
+            const glowMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffd700,
+                transparent: true,
+                opacity: 0.05,
+                side: THREE.BackSide
+            });
+            const glow = new THREE.Mesh(glowGeometry, glowMaterial);
+            bookGroup.add(glow);
         }
 
-        function loadImageTexture(imageUrl) {
-            const loader = new THREE.TextureLoader();
-            const texture = loader.load(
-                imageUrl,
-                function(texture) {
-                    // Image loaded successfully
-                    texture.wrapS = THREE.ClampToEdgeWrapping;
-                    texture.wrapT = THREE.ClampToEdgeWrapping;
-                    texture.minFilter = THREE.LinearFilter;
-                    texture.magFilter = THREE.LinearFilter;
-                },
-                function(progress) {
-                    // Loading progress
-                    console.log('Loading progress: ' + (progress.loaded / progress.total * 100) + '%');
-                },
-                function(error) {
-                    // Error loading image
-                    console.error('Error loading texture:', error);
+        // Removed updatePageVisibility - not needed for static mockup
+
+        // Removed page flipping functions - not needed for static mockup
+
+        // Removed navigation functions - not needed for static mockup
+
+        function setCameraView(view) {
+            const duration = 1500;
+            const startTime = Date.now();
+            const startPosition = camera.position.clone();
+            let targetPosition;
+            
+            switch(view) {
+                case 'front':
+                    targetPosition = new THREE.Vector3(0, 0, 6);
+                    break;
+                case 'angle':
+                    targetPosition = new THREE.Vector3(4, 3, 5);
+                    break;
+                case 'top':
+                    targetPosition = new THREE.Vector3(0, 8, 2);
+                    break;
+                case 'side':
+                    targetPosition = new THREE.Vector3(6, 1, 0);
+                    break;
+                default:
+                    targetPosition = new THREE.Vector3(0, 2, 6);
+            }
+            
+            function animateCamera() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easing = 1 - Math.pow(1 - progress, 3);
+                
+                camera.position.lerpVectors(startPosition, targetPosition, easing);
+                camera.lookAt(0, 0, 0);
+                
+                if (progress < 1) {
+                    requestAnimationFrame(animateCamera);
                 }
-            );
-            return texture;
+            }
+            
+            animateCamera();
+        }
+
+        function toggleRotation() {
+            autoRotate = !autoRotate;
+        }
+
+        function resetPosition() {
+            targetRotationX = 0;
+            targetRotationY = 0;
+            setCameraView('front');
         }
 
         function addEventListeners() {
@@ -307,10 +593,13 @@
             document.addEventListener('mouseup', onMouseUp);
             document.addEventListener('wheel', onWheel);
             
-            // Touch events for mobile
+            // Touch events
             document.addEventListener('touchstart', onTouchStart);
             document.addEventListener('touchmove', onTouchMove);
             document.addEventListener('touchend', onTouchEnd);
+            
+            // Keyboard events
+            document.addEventListener('keydown', onKeyDown);
             
             // Window resize
             window.addEventListener('resize', onWindowResize);
@@ -332,7 +621,6 @@
             targetRotationY += deltaX * 0.01;
             targetRotationX += deltaY * 0.01;
             
-            // Limit vertical rotation
             targetRotationX = Math.max(-Math.PI/3, Math.min(Math.PI/3, targetRotationX));
             
             mouseX = event.clientX;
@@ -344,9 +632,19 @@
             document.body.classList.remove('grabbing');
         }
 
+        // Removed double-click book opening - not needed for static mockup
+
         function onWheel(event) {
             camera.position.z += event.deltaY * 0.01;
             camera.position.z = Math.max(2, Math.min(10, camera.position.z));
+        }
+
+        function onKeyDown(event) {
+            switch(event.key) {
+                case 'r':
+                    toggleRotation();
+                    break;
+            }
         }
 
         function onTouchStart(event) {
@@ -382,138 +680,14 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // Animation functions
-        function openBook() {
-            if (isBookOpen) return;
-            isBookOpen = true;
-            
-            const duration = 2000; // 2 seconds
-            const startTime = Date.now();
-            const startRotation = frontCover.rotation.y;
-            const targetRotation = -Math.PI * 0.7;
-            
-            function animateOpen() {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const easing = 1 - Math.pow(1 - progress, 3); // Ease out cubic
-                
-                frontCover.rotation.y = startRotation + (targetRotation - startRotation) * easing;
-                
-                if (progress < 1) {
-                    requestAnimationFrame(animateOpen);
-                }
-            }
-            
-            animateOpen();
-        }
-
-        function closeBook() {
-            if (!isBookOpen) return;
-            isBookOpen = false;
-            
-            const duration = 1500;
-            const startTime = Date.now();
-            const startRotation = frontCover.rotation.y;
-            const targetRotation = 0;
-            
-            function animateClose() {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const easing = 1 - Math.pow(1 - progress, 2); // Ease out quad
-                
-                frontCover.rotation.y = startRotation + (targetRotation - startRotation) * easing;
-                
-                if (progress < 1) {
-                    requestAnimationFrame(animateClose);
-                }
-            }
-            
-            animateClose();
-        }
-
-        function flipPage() {
-            // Create a page flip animation effect
-            const page = pages.clone();
-            page.material = new THREE.MeshPhongMaterial({ 
-                color: 0xFFFFF0, 
-                transparent: true, 
-                opacity: 0.8 
-            });
-            bookGroup.add(page);
-            
-            const duration = 1000;
-            const startTime = Date.now();
-            
-            function animateFlip() {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const rotation = Math.PI * progress;
-                
-                page.rotation.y = rotation;
-                page.material.opacity = 0.8 * (1 - progress * 0.5);
-                
-                if (progress < 1) {
-                    requestAnimationFrame(animateFlip);
-                } else {
-                    bookGroup.remove(page);
-                }
-            }
-            
-            animateFlip();
-        }
-
-        function setCameraView(view) {
-            const duration = 1500;
-            const startTime = Date.now();
-            const startPosition = camera.position.clone();
-            let targetPosition;
-            
-            switch(view) {
-                case 'front':
-                    targetPosition = new THREE.Vector3(0, 0, 5);
-                    break;
-                case 'angle':
-                    targetPosition = new THREE.Vector3(3, 2, 4);
-                    break;
-                case 'top':
-                    targetPosition = new THREE.Vector3(0, 6, 2);
-                    break;
-            }
-            
-            function animateCamera() {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                const easing = 1 - Math.pow(1 - progress, 3);
-                
-                camera.position.lerpVectors(startPosition, targetPosition, easing);
-                camera.lookAt(0, 0, 0);
-                
-                if (progress < 1) {
-                    requestAnimationFrame(animateCamera);
-                }
-            }
-            
-            animateCamera();
-        }
-
-        function toggleRotation() {
-            autoRotate = !autoRotate;
-        }
-
-        function resetPosition() {
-            targetRotationX = 0;
-            targetRotationY = 0;
-            camera.position.set(0, 2, 6);
-            camera.lookAt(0, 0, 0);
-            closeBook();
-        }
-
         function animate() {
             requestAnimationFrame(animate);
             
+            const time = Date.now() * 0.001;
+            
             // Smooth rotation interpolation
-            currentRotationX += (targetRotationX - currentRotationX) * 0.05;
-            currentRotationY += (targetRotationY - currentRotationY) * 0.05;
+            currentRotationX += (targetRotationX - currentRotationX) * 0.08;
+            currentRotationY += (targetRotationY - currentRotationY) * 0.08;
             
             // Auto rotation
             if (autoRotate) {
@@ -524,8 +698,27 @@
             bookGroup.rotation.x = currentRotationX;
             bookGroup.rotation.y = currentRotationY;
             
-            // Floating animation
-            bookGroup.position.y = Math.sin(Date.now() * 0.001) * 0.1;
+            // Enhanced floating animation
+            bookGroup.position.y = Math.sin(time) * 0.08 + Math.sin(time * 1.7) * 0.03;
+            
+            // Static book - no page animations needed for mockup
+            
+            // Animate atmospheric particles
+            if (window.particleSystem) {
+                const positions = window.particleSystem.geometry.attributes.position.array;
+                for (let i = 0; i < positions.length; i += 3) {
+                    positions[i + 1] += Math.sin(time + i) * 0.001; // Gentle floating
+                    positions[i] += Math.cos(time * 0.5 + i) * 0.0005; // Drift
+                    
+                    // Reset particles that drift too far
+                    if (positions[i + 1] > 8) positions[i + 1] = -8;
+                    if (positions[i + 1] < -8) positions[i + 1] = 8;
+                }
+                window.particleSystem.geometry.attributes.position.needsUpdate = true;
+                
+                // Rotate particle system slowly
+                window.particleSystem.rotation.y = time * 0.1;
+            }
             
             renderer.render(scene, camera);
         }
