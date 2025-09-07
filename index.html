@@ -141,6 +141,110 @@
             padding: 0;
             font-size: 10px;
         }
+        .credit {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            color: #ffd700;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 215, 0, 0.3);
+            font-size: 12px;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+            z-index: 100;
+        }
+        .controls-toggle {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: #ffd700;
+            border: 1px solid rgba(255, 215, 0, 0.3);
+            border-radius: 8px;
+            padding: 10px;
+            cursor: pointer;
+            font-size: 18px;
+            z-index: 101;
+            display: none;
+        }
+        .controls.collapsed {
+            transform: translateX(-100%);
+            opacity: 0;
+            pointer-events: none;
+        }
+        .controls {
+            transition: all 0.3s ease;
+        }
+        /* Mobile and Tablet Responsive Styles */
+        @media (max-width: 768px) {
+            .controls {
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                max-width: none;
+                width: calc(100% - 20px);
+                font-size: 14px;
+            }
+            .controls h3 {
+                font-size: 14px;
+            }
+            .control-group button {
+                padding: 8px 12px;
+                font-size: 11px;
+                margin: 2px;
+            }
+            .controls-toggle {
+                display: block;
+            }
+            .title {
+                top: 80px;
+                left: 10px;
+                right: 10px;
+                width: calc(100% - 20px);
+            }
+            .title h1 {
+                font-size: 16px;
+            }
+            .title p {
+                font-size: 11px;
+            }
+            .info {
+                bottom: 80px;
+                left: 10px;
+                right: 10px;
+                width: calc(100% - 20px);
+                font-size: 11px;
+            }
+            .credit {
+                bottom: 10px;
+                right: 10px;
+                font-size: 10px;
+                padding: 8px 12px;
+            }
+        }
+        @media (max-width: 480px) {
+            .controls {
+                padding: 10px;
+            }
+            .control-group {
+                margin: 8px 0;
+            }
+            .control-group button {
+                padding: 6px 10px;
+                font-size: 10px;
+                width: calc(50% - 4px);
+                margin: 1px;
+            }
+            .title h1 {
+                font-size: 14px;
+            }
+            .info {
+                font-size: 10px;
+                padding: 10px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -148,13 +252,17 @@
         <div>Loading 3D Book...</div>
     </div>
 
+    <div class="controls-toggle" onclick="toggleControls()">
+        ☰
+    </div>
+
     <div class="title">
         <h1>PRESTIGIOUS MILITARY PUBLICATION</h1>
         <p>Interactive 3D Preview</p>
     </div>
     
-    <div class="controls">
-        <h3>🎛️ Interactive 3D Preview</h3>
+    <div class="controls" id="controls">
+        <h3>🎛️ 3D Book Mockup</h3>
         <div class="control-group">
             <label>Camera Views:</label>
             <button onclick="setCameraView('front')">Front</button>
@@ -175,6 +283,10 @@
         • Scroll to zoom in/out<br>
         • Use camera views for different angles<br>
         • Toggle auto-rotate for continuous motion
+    </div>
+
+    <div class="credit">
+        ✨ Designed & Developed by Eswar
     </div>
 
     <script>
@@ -723,8 +835,73 @@
             renderer.render(scene, camera);
         }
 
+        // Toggle controls for mobile
+        function toggleControls() {
+            const controls = document.getElementById('controls');
+            controls.classList.toggle('collapsed');
+        }
+
+        // Enhanced touch support for mobile devices
+        function addTouchSupport() {
+            let touchStartX = 0, touchStartY = 0;
+            let lastTouchX = 0, lastTouchY = 0;
+            let touchDistance = 0;
+            let lastTouchDistance = 0;
+
+            canvas.addEventListener('touchstart', (event) => {
+                event.preventDefault();
+                if (event.touches.length === 1) {
+                    // Single touch - rotation
+                    touchStartX = event.touches[0].clientX;
+                    touchStartY = event.touches[0].clientY;
+                    lastTouchX = touchStartX;
+                    lastTouchY = touchStartY;
+                    isMouseDown = true;
+                } else if (event.touches.length === 2) {
+                    // Two finger touch - zoom
+                    const dx = event.touches[0].clientX - event.touches[1].clientX;
+                    const dy = event.touches[0].clientY - event.touches[1].clientY;
+                    touchDistance = Math.sqrt(dx * dx + dy * dy);
+                    lastTouchDistance = touchDistance;
+                }
+            });
+
+            canvas.addEventListener('touchmove', (event) => {
+                event.preventDefault();
+                if (event.touches.length === 1 && isMouseDown) {
+                    // Single touch - rotation
+                    const deltaX = event.touches[0].clientX - lastTouchX;
+                    const deltaY = event.touches[0].clientY - lastTouchY;
+                    
+                    targetRotationY += deltaX * 0.01;
+                    targetRotationX += deltaY * 0.01;
+                    
+                    lastTouchX = event.touches[0].clientX;
+                    lastTouchY = event.touches[0].clientY;
+                } else if (event.touches.length === 2) {
+                    // Two finger touch - zoom
+                    const dx = event.touches[0].clientX - event.touches[1].clientX;
+                    const dy = event.touches[0].clientY - event.touches[1].clientY;
+                    touchDistance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    const scale = touchDistance / lastTouchDistance;
+                    camera.position.multiplyScalar(1 / scale);
+                    
+                    lastTouchDistance = touchDistance;
+                }
+            });
+
+            canvas.addEventListener('touchend', (event) => {
+                event.preventDefault();
+                isMouseDown = false;
+            });
+        }
+
         // Initialize when page loads
-        window.addEventListener('load', init);
+        window.addEventListener('load', () => {
+            init();
+            addTouchSupport();
+        });
     </script>
 </body>
 </html>
